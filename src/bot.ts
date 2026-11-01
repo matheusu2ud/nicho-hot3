@@ -1,0 +1,420 @@
+import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { Telegraf, Markup, Input, type Context } from "telegraf";
+import QRCode from "qrcode";
+import type { Config } from "./config.js";
+import { VipDatabase } from "./database.js";
+import {
+  ChasePayError,
+  createPixCharge,
+  parseChargeEvent
+} from "./chasepay.js";
+import { formatBRL, isPlanId, PLANS } from "./plans.js";
+
+export function createBot(config: Config, db: VipDatabase): Telegraf {
+  const bot = new Telegraf(config.botToken);
+
+  bot.start(async (ctx) => {
+    if (!db.isAgeVerified(ctx.from.id)) {
+      await ctx.replyWithPhoto(welcomePhoto(), {
+        caption:
+          "Esta área é exclusiva para maiores de 18 anos. Ao continuar, você declara ter 18 anos ou mais.",
+        reply_markup: Markup.inlineKeyboard([
+          [Markup.button.callback("Tenho 18 anos ou mais", "age:yes")],
+          [Markup.button.callback("Sair", "age:no")]
+        ]).reply_markup
+      });
+      return;
+    }
+    await showHome(ctx);
+  });
+
+  bot.action("age:yes", async (ctx) => {
+    await ctx.answerCbQuery();
+    db.verifyAge(ctx.from.id);
+    await ctx.reply(
+      "🔥 Bem-vindo à nossa área exclusiva\n\n" +
+        "🔞 Plataforma destinada exclusivamente a maiores de 18 anos.\n\n" +
+        "💎 Acesse a área VIP.\n" +
+        (config.botMode === "preview"
+          ? "⚠️ Modo de visualização: pagamentos e acesso ao canal estão desativados."
+          : "⚡ Escolha seu plano. Os planos mensais precisam ser pagos novamente a cada 30 dias.\n" +
+            "🔐 O acesso é liberado após a confirmação do pagamento."),
+      homeKeyboard()
+    );
+  });
+
+  bot.action("age:no", async (ctx) => {
+    await ctx.answerCbQuery();
+    await ctx.reply("Acesso indisponível. Este bot é exclusivo para maiores de 18 anos.");
+  });
+
+  bot.action("home", async (ctx) => {
+    await ctx.answerCbQuery();
+    if (!(await requireAgeVerification(ctx, db))) return;
+    await ctx.reply("Área VIP", homeKeyboard());
+  });
+
+  bot.action("plans", async (ctx) => {
+    await ctx.answerCbQuery();
+    if (!(await requireAgeVerification(ctx, db))) return;
+    await ctx.reply(
+      "💎 Escolha seu plano:\n\n" +
+        "• R$ 10,00 — acesso por 30 dias\n" +
+        "• R$ 14,99 — acesso por 30 dias\n" +
+        "• R$ 19,99 — acesso permanente\n\n" +
+        "Os planos de 30 dias não renovam cobrança automaticamente: pague novamente para estender o acesso.",
+      Markup.inlineKeyboard([
+        [Markup.button.callback("VIP 30 dias — R$ 10,00", "buy:monthly_10")],
+        [Markup.button.callback("VIP 30 dias — R$ 14,99", "buy:monthly_1499")],
+        [Markup.button.callback("VIP permanente — R$ 19,99", "buy:lifetime")],
+        [Markup.button.callback("Voltar", "home")]
+      ])
+    );
+  });
+
+  bot.action(/^buy:(.+)$/, async (ctx) => {
+    await ctx.answerCbQuery();
+    if (!(await requireAgeVerification(ctx, db))) return;
+    const selected = ctx.match[1];
+    if (!isPlanId(selected)) {
+      await ctx.reply("Plano inválido. Abra novamente a lista de planos.");
+      return;
+    }
+
+    const plan = PLANS[selected];
+    if (config.botMode === "preview") {
+      await ctx.reply(
+        `Prévia do plano: ${plan.title} (${formatBRL(plan.amountCents)}).\n\n` +
+          "Nenhuma cobrança foi criada. O modo de visualização não processa pagamentos."
+      );
+      return;
+    }
+
+    const existing = db.getRecentPendingOrder(ctx.from.id, plan.id);
+    if (existing) {
+      if (existing.pixCode) {
+        await sendPixInstructions(ctx, existing.pixCode, existing.amountCents);
+      } else {
+        await ctx.reply(
+          "Já existe um pedido aguardando confirmação ou verificação. Para evitar uma cobrança duplicada, fale com o suporte antes de tentar novamente."
+        );
+      }
+      return;
+    }
+
+    const order = {
+      externalId: randomUUID().replaceAll("-", ""),
+      telegramUserId: ctx.from.id,
+      planId: plan.id,
+      amountCents: plan.amountCents,
+      status: "creating" as const,
+      createdAt: Date.now(),
+      pixCode: null,
+      notificationSent: false,
+      paidAt: null
+    };
+
+    try {
+      db.createOrder(order);
+      if (!config.chasepayApiKey) {
+        throw new Error("CHASEPAY_API_KEY is required in live mode");
+      }
+      const charge = await createPixCharge(
+        config.chasepayApiKey,
+        order
+      );
+      if (charge.status === "paid") {
+        const completion = db.completePaidOrder(
+          order.externalId,
+          order.amountCents
+        );
+        if (!completion) {
+          await ctx.reply(
+            "O provedor informou um pagamento, mas não consegui confirmar o pedido. Não pague novamente; fale com o suporte para conferirmos."
+          );
+          return;
+        }
+        try {
+          await notifyIfNeeded(bot, config, db, order.externalId);
+        } catch (error) {
+          console.error("Payment was confirmed but VIP notification failed:", error);
+          await ctx.reply(
+            "Pagamento confirmado e acesso ativado, mas não consegui enviar o convite agora. Abra “Minha assinatura” ou fale com o suporte."
+          );
+        }
+        return;
+      }
+      if (charge.status !== "pending" || !charge.pixCode) {
+        db.setOrderStatus(order.externalId, "unknown");
+        await ctx.reply(
+          "Não foi possível confirmar os dados da cobrança. Ela pode ter sido criada; não tente pagar de novo ainda. Fale com o suporte para conferirmos."
+        );
+        return;
+      }
+
+      db.setOrderPayment(order.externalId, charge.pixCode);
+      await sendPixInstructions(ctx, charge.pixCode, order.amountCents);
+    } catch (error) {
+      const outcomeUnknown =
+        error instanceof ChasePayError && error.outcomeUnknown;
+      db.setOrderStatus(order.externalId, outcomeUnknown ? "unknown" : "failed");
+      console.error("Could not create ChasePay charge:", error);
+      await ctx.reply(
+        outcomeUnknown
+          ? "A resposta do pagamento ficou incerta. Por segurança, não tente pagar novamente até falar com o suporte."
+          : "Não foi possível criar o pagamento. Tente novamente mais tarde ou fale com o suporte."
+      );
+    }
+  });
+
+  bot.action("subscription", async (ctx) => {
+    await ctx.answerCbQuery();
+    if (!(await requireAgeVerification(ctx, db))) return;
+    if (config.botMode === "preview") {
+      await ctx.reply(
+        "Modo de visualização: nenhuma assinatura nem acesso real ao canal está ativo.",
+        homeKeyboard()
+      );
+      return;
+    }
+    const entitlement = db.getEntitlement(ctx.from.id);
+    if (
+      !entitlement ||
+      (!entitlement.permanent &&
+        (entitlement.expiresAt === null || entitlement.expiresAt <= Date.now()))
+    ) {
+      await ctx.reply(
+        "Você não tem uma assinatura VIP ativa.",
+        homeKeyboard()
+      );
+      return;
+    }
+
+    const status = entitlement.permanent
+      ? "Sua assinatura VIP é permanente."
+      : `Seu acesso VIP é válido até ${new Date(entitlement.expiresAt!).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}.`;
+    const membership = await getMembership(
+      bot,
+      requireVipChannelId(config),
+      ctx.from.id
+    );
+    if (membership === "member") {
+      await ctx.reply(status);
+      return;
+    }
+
+    try {
+      const invite = await createInvite(bot, requireVipChannelId(config));
+      await ctx.reply(`${status}\n\nAcesse seu canal privado por este link válido por 10 minutos:\n${invite}`);
+    } catch (error) {
+      console.error("Could not create VIP invite:", error);
+      await ctx.reply(
+        "Sua assinatura está ativa, mas não consegui gerar o convite agora. Tente novamente ou fale com o suporte."
+      );
+    }
+  });
+
+  bot.action("support", async (ctx) => {
+    await ctx.answerCbQuery();
+    if (!(await requireAgeVerification(ctx, db))) return;
+    await ctx.reply(`💬 Suporte: https://t.me/${config.supportUsername}`);
+  });
+
+  bot.catch((error) => {
+    console.error("Telegram bot update failed:", error);
+  });
+
+  return bot;
+}
+
+export async function processWebhookBody(
+  bot: Telegraf,
+  config: Config,
+  db: VipDatabase,
+  bodyHash: string,
+  rawBody: string
+): Promise<void> {
+  const event = parseChargeEvent(rawBody);
+
+  if (event.event !== "charge.paid") {
+    db.markWebhookProcessed(bodyHash);
+    return;
+  }
+  if (!event.externalId || event.amountCents === undefined) {
+    throw new Error("Paid event is missing external_id or amount_cents");
+  }
+
+  const completion = db.completePaidOrder(event.externalId, event.amountCents);
+  if (!completion) {
+    console.error(
+      `Paid webhook did not match a pending order: ${event.externalId}`
+    );
+    db.markWebhookProcessed(bodyHash);
+    return;
+  }
+
+  await notifyIfNeeded(bot, config, db, event.externalId);
+  db.markWebhookProcessed(bodyHash);
+}
+
+export async function expireMemberships(
+  bot: Telegraf,
+  config: Config,
+  db: VipDatabase
+): Promise<void> {
+  if (config.botMode === "preview") return;
+  const vipChannelId = requireVipChannelId(config);
+  for (const userId of db.getExpiredEntitlements()) {
+    try {
+      const membership = await getMembership(bot, vipChannelId, userId);
+      if (membership === "member") {
+        await bot.telegram.banChatMember(vipChannelId, userId);
+        await bot.telegram.unbanChatMember(vipChannelId, userId);
+      }
+      db.removeEntitlement(userId);
+      await bot.telegram.sendMessage(
+        userId,
+        "Seu acesso VIP terminou. Para continuar, escolha um plano e faça um novo pagamento.",
+        homeKeyboard()
+      );
+    } catch (error) {
+      console.error(`Could not expire VIP access for user ${userId}:`, error);
+    }
+  }
+}
+
+async function notifyAndInvite(
+  bot: Telegraf,
+  config: Config,
+  db: VipDatabase,
+  userId: number
+): Promise<void> {
+  const entitlement = db.getEntitlement(userId);
+  if (!entitlement) {
+    throw new Error("Paid order did not create an entitlement");
+  }
+  const invite = await createInvite(bot, requireVipChannelId(config));
+  const status = entitlement.permanent
+    ? "Seu acesso VIP permanente foi liberado."
+    : `Seu acesso VIP foi liberado por 30 dias, até ${new Date(entitlement.expiresAt!).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}.`;
+  await bot.telegram.sendMessage(
+    userId,
+    `${status}\n\nEntre no canal privado usando este link, válido por 10 minutos:\n${invite}`,
+    homeKeyboard()
+  );
+}
+
+async function notifyIfNeeded(
+  bot: Telegraf,
+  config: Config,
+  db: VipDatabase,
+  externalId: string
+): Promise<void> {
+  const order = db.getOrder(externalId);
+  if (!order || order.status !== "paid" || order.notificationSent) return;
+  await notifyAndInvite(bot, config, db, order.telegramUserId);
+  db.markOrderNotificationSent(externalId);
+}
+
+async function sendPixInstructions(
+  ctx: Context,
+  pixCode: string,
+  amountCents: number
+): Promise<void> {
+  const qr = await QRCode.toBuffer(pixCode, { type: "png", width: 360 });
+  await ctx.replyWithPhoto(Input.fromBuffer(qr, "pix.png"), {
+    caption:
+      `PIX de ${formatBRL(amountCents)}.\n` +
+      "Escaneie o QR Code ou copie o código abaixo. O acesso será enviado após a confirmação do pagamento."
+  });
+  await ctx.reply(`<code>${escapeHtml(pixCode)}</code>`, {
+    parse_mode: "HTML"
+  });
+}
+
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"]/g, (character) => {
+    switch (character) {
+      case "&": return "&amp;";
+      case "<": return "&lt;";
+      case ">": return "&gt;";
+      case '"': return "&quot;";
+      default: return character;
+    }
+  });
+}
+
+function homeKeyboard() {
+  return Markup.inlineKeyboard([
+    [Markup.button.callback("💎 Conhecer planos VIP", "plans")],
+    [Markup.button.callback("👤 Minha assinatura", "subscription")],
+    [Markup.button.callback("💬 Suporte", "support")]
+  ]);
+}
+
+async function showHome(ctx: Context): Promise<void> {
+  await ctx.replyWithPhoto(welcomePhoto(), {
+    caption:
+    "🔥 Bem-vindo à nossa área exclusiva 🔥\n\n" +
+      "🔞 Plataforma destinada exclusivamente a maiores de 18 anos.\n\n" +
+      "💎 Acesse nossa área VIP.\n" +
+      "⚡ Escolha seu plano.\n" +
+      "🔐 O acesso VIP é liberado após a confirmação do pagamento.",
+    reply_markup: homeKeyboard().reply_markup
+  });
+}
+
+function welcomePhoto() {
+  const image = readFileSync(resolve(process.cwd(), "assets", "welcome.jpg"));
+  return Input.fromBuffer(image, "welcome.jpg");
+}
+
+async function requireAgeVerification(
+  ctx: Context,
+  db: VipDatabase
+): Promise<boolean> {
+  const userId = ctx.from?.id;
+  if (!userId) {
+    await ctx.reply("Não consegui identificar sua conta do Telegram. Tente novamente pelo chat privado.");
+    return false;
+  }
+  if (db.isAgeVerified(userId)) return true;
+  await ctx.reply(
+    "Confirme que tem 18 anos ou mais para continuar.",
+    Markup.inlineKeyboard([
+      [Markup.button.callback("Tenho 18 anos ou mais", "age:yes")],
+      [Markup.button.callback("Sair", "age:no")]
+    ])
+  );
+  return false;
+}
+
+async function getMembership(
+  bot: Telegraf,
+  channelId: string,
+  userId: number
+): Promise<"member" | "not_member"> {
+  const member = await bot.telegram.getChatMember(channelId, userId);
+  return ["member", "administrator", "creator", "restricted"].includes(
+    member.status
+  )
+    ? "member"
+    : "not_member";
+}
+
+async function createInvite(bot: Telegraf, channelId: string): Promise<string> {
+  const result = await bot.telegram.createChatInviteLink(channelId, {
+    member_limit: 1,
+    expire_date: Math.floor(Date.now() / 1000) + 10 * 60
+  });
+  return result.invite_link;
+}
+
+function requireVipChannelId(config: Config): string {
+  if (!config.vipChannelId) {
+    throw new Error("VIP_CHANNEL_ID is required in live mode");
+  }
+  return config.vipChannelId;
+}
