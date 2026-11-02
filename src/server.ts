@@ -10,17 +10,21 @@ import { processWebhookBody } from "./bot.js";
 import type { Telegraf } from "telegraf";
 
 const WEBHOOK_PATH = "/webhooks/chasepay";
+const TELEGRAM_WEBHOOK_PATH = "/webhooks/telegram";
 const MAX_BODY_BYTES = 64 * 1024;
 
-export function createWebhookServer(
+export async function createWebhookServer(
   config: Config,
   db: VipDatabase,
   bot: Telegraf
-): Server {
+): Promise<Server> {
   const webhookSecret = config.chasepayWebhookSecret;
-  if (!webhookSecret) {
-    throw new Error("CHASEPAY_WEBHOOK_SECRET is required in live mode");
-  }
+  const telegramWebhookSecret = createHash("sha256")
+    .update(`telegram-webhook:${config.botToken}`)
+    .digest("hex");
+  const telegramWebhook = bot.webhookCallback(TELEGRAM_WEBHOOK_PATH, {
+    secretToken: telegramWebhookSecret
+  });
 
   let draining = false;
 
@@ -42,17 +46,52 @@ export function createWebhookServer(
   };
 
   const server = createServer((request, response) => {
+    const path = new URL(request.url ?? "/", "http://localhost").pathname;
+    if (request.method === "POST" && path === TELEGRAM_WEBHOOK_PATH) {
+      void telegramWebhook(request, response).catch((error: unknown) => {
+        console.error("Could not process Telegram update:", error);
+        if (!response.headersSent) {
+          response.writeHead(500);
+          response.end("Internal server error");
+        }
+      });
+      return;
+    }
     void handleRequest(request, response, config, db, webhookSecret, drainQueue);
   });
   server.on("error", (error) => {
-    console.error("Webhook server error:", error);
+    console.error("HTTP server error:", error);
   });
-  server.listen(config.port, () => {
-    console.log(`Webhook server listening on port ${config.port}`);
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(config.port, () => {
+      server.off("error", reject);
+      resolve();
+    });
+  });
+  console.log(`HTTP server listening on port ${config.port}`);
+
+  try {
+    if (!config.publicBaseUrl) {
+      throw new Error("PUBLIC_BASE_URL is required to receive Telegram updates");
+    }
+    await bot.telegram.setWebhook(
+      `${config.publicBaseUrl}${TELEGRAM_WEBHOOK_PATH}`,
+      { secret_token: telegramWebhookSecret }
+    );
+    console.log("Telegram webhook configured.");
+  } catch (error) {
+    await new Promise<void>((resolve, reject) => {
+      server.close((closeError) => (closeError ? reject(closeError) : resolve()));
+    });
+    throw error;
+  }
+
+  if (webhookSecret) {
     void drainQueue();
-  });
-  const interval = setInterval(() => void drainQueue(), 5_000);
-  interval.unref();
+    const interval = setInterval(() => void drainQueue(), 5_000);
+    interval.unref();
+  }
   return server;
 }
 
@@ -61,13 +100,18 @@ async function handleRequest(
   response: ServerResponse,
   config: Config,
   db: VipDatabase,
-  webhookSecret: string,
+  webhookSecret: string | null,
   drainQueue: () => Promise<void>
 ): Promise<void> {
   const path = new URL(request.url ?? "/", "http://localhost").pathname;
   if (request.method === "GET" && path === "/healthz") {
     response.writeHead(200, { "Content-Type": "application/json" });
     response.end(JSON.stringify({ status: "ok" }));
+    return;
+  }
+  if (!webhookSecret) {
+    response.writeHead(404);
+    response.end("Not found");
     return;
   }
   if (request.method !== "POST" || path !== WEBHOOK_PATH) {

@@ -42,12 +42,10 @@ export function loadConfig(): Config {
   }
 
   const liveMode = botMode === "live";
-  const publicBaseUrl = liveMode ? required("PUBLIC_BASE_URL") : null;
-  if (publicBaseUrl) {
-    const parsedBaseUrl = new URL(publicBaseUrl);
-    if (parsedBaseUrl.protocol !== "https:") {
-      throw new Error("PUBLIC_BASE_URL must use HTTPS");
-    }
+  const publicBaseUrl = required("PUBLIC_BASE_URL").replace(/\/+$/, "");
+  const parsedBaseUrl = new URL(publicBaseUrl);
+  if (parsedBaseUrl.protocol !== "https:") {
+    throw new Error("PUBLIC_BASE_URL must use HTTPS");
   }
 
   return {
@@ -57,7 +55,7 @@ export function loadConfig(): Config {
     chasepayWebhookSecret: liveMode ? required("CHASEPAY_WEBHOOK_SECRET") : null,
     vipChannelId: liveMode ? required("VIP_CHANNEL_ID") : null,
     supportUsername: (process.env.SUPPORT_USERNAME ?? "ceoc2b").replace(/^@/, ""),
-    publicBaseUrl: publicBaseUrl?.replace(/\/+$/, "") ?? null,
+    publicBaseUrl,
     port,
     databasePath: liveMode
       ? process.env.DATABASE_PATH ?? "./data/vip-bot.sqlite"

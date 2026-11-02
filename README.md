@@ -17,7 +17,7 @@ Bot de assinatura com planos Pix, confirmação de pagamento por webhook e liber
    Copy-Item .env.example .env
    ```
 
-4. No `.env`, mantenha `BOT_MODE=preview` e preencha somente `BOT_TOKEN` com um token novo criado pelo BotFather. O modo preview mostra os menus e planos, mas não cria cobranças, não gera Pix e não libera acesso.
+4. No `.env`, mantenha `BOT_MODE=preview`, preencha `BOT_TOKEN` com o token criado pelo BotFather e `PUBLIC_BASE_URL` com o domínio HTTPS do serviço.
 5. Compile e inicie:
 
    ```bash
@@ -25,7 +25,7 @@ Bot de assinatura com planos Pix, confirmação de pagamento por webhook e liber
    npm start
    ```
 
-O bot usa long polling do Telegram. No modo preview, não inicia o servidor de webhook nem conecta à API de pagamento. Use `/start` no Telegram para ver a experiência.
+O bot recebe atualizações do Telegram por webhook e inicia um servidor HTTP na porta `PORT` (ou `3000` localmente). O endpoint `/healthz` pode ser usado como health check. No modo preview, pagamentos continuam desativados.
 
 ## Ativar pagamentos reais
 
@@ -37,6 +37,8 @@ Só altere para `BOT_MODE=live` depois de configurar:
 - `PUBLIC_BASE_URL`: domínio HTTPS público do servidor.
 
 Configure no painel do gateway o webhook `POST https://SEU_DOMINIO/webhooks/chasepay`. A implementação espera a assinatura HMAC-SHA256 no cabeçalho `x-chase-signature`.
+
+Para hospedar na Render, crie um **Web Service** com Build Command `npm ci && npm run build` e Start Command `npm start`. Defina `PUBLIC_BASE_URL` como a URL HTTPS pública do serviço, inclusive no modo preview.
 
 ## Testes
 

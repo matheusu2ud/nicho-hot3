@@ -29,10 +29,11 @@ function withCleanEnvironment(run: () => void): void {
   }
 }
 
-test("preview mode needs only a Telegram bot token and uses a separate database", () => {
+test("preview mode needs a Telegram token and public URL and uses a separate database", () => {
   withCleanEnvironment(() => {
     process.env.BOT_MODE = "preview";
     process.env.BOT_TOKEN = "test-telegram-token";
+    process.env.PUBLIC_BASE_URL = "https://example.com";
 
     const config = loadConfig();
 
@@ -40,7 +41,7 @@ test("preview mode needs only a Telegram bot token and uses a separate database"
     assert.equal(config.chasepayApiKey, null);
     assert.equal(config.chasepayWebhookSecret, null);
     assert.equal(config.vipChannelId, null);
-    assert.equal(config.publicBaseUrl, null);
+    assert.equal(config.publicBaseUrl, "https://example.com");
     assert.equal(config.databasePath, "./data/vip-bot-preview.sqlite");
   });
 });

@@ -7,16 +7,11 @@ async function main(): Promise<void> {
   const config = loadConfig();
   const db = new VipDatabase(config.databasePath);
   const bot = createBot(config, db);
-  const server =
-    config.botMode === "live"
-      ? createWebhookServer(config, db, bot)
-      : null;
-
-  await bot.launch();
+  const server = await createWebhookServer(config, db, bot);
   console.log(
     config.botMode === "preview"
-      ? "Telegram bot started in PREVIEW mode; payments are disabled."
-      : "Telegram bot started in LIVE mode."
+      ? "Telegram bot started in PREVIEW mode with webhooks; payments are disabled."
+      : "Telegram bot started in LIVE mode with webhooks."
   );
 
   const expirationTimer =
@@ -33,12 +28,9 @@ async function main(): Promise<void> {
   const shutdown = async (signal: string): Promise<void> => {
     console.log(`Received ${signal}; shutting down`);
     if (expirationTimer) clearInterval(expirationTimer);
-    bot.stop(signal);
-    if (server) {
-      await new Promise<void>((resolve, reject) => {
-        server.close((error) => (error ? reject(error) : resolve()));
-      });
-    }
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => (error ? reject(error) : resolve()));
+    });
     db.close();
   };
 
