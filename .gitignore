@@ -1,5 +1,13 @@
+<<<<<<< HEAD
 node_modules/
 dist/
 .env
 data/
 npm-debug.log*
+=======
+node_modules/
+dist/
+.env
+data/
+npm-debug.log*
+>>>>>>> 16bf7ce3f5a1cbca4fc92bfde623d93693f32bef
