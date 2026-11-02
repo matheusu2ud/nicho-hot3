@@ -192,7 +192,7 @@ async function sendPixInstructions(
   await ctx.replyWithPhoto(Input.fromBuffer(qr, "pix.png"), {
     caption:
       `PIX de ${formatBRL(amountCents)}.\n` +
-      "Escaneie o QR Code ou copie o código abaixo. Após pagar, envie o comprovante ao suporte; o acesso será liberado manualmente após a confirmação."
+      "🔥 Prepare-se para momentos intensos e conteúdo exclusivo para maiores de 18 anos. 💋"
   });
   await ctx.reply(`<code>${escapeHtml(pixCode)}</code>`, {
     parse_mode: "HTML"
