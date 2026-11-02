@@ -32,16 +32,17 @@ export function createBot(config: Config, db: VipDatabase): Telegraf {
   bot.action("age:yes", async (ctx) => {
     await ctx.answerCbQuery();
     db.verifyAge(ctx.from.id);
-    await ctx.reply(
-      "🔥 Bem-vindo à nossa área exclusiva\n\n" +
+    await ctx.replyWithPhoto(afterAgePhoto(), {
+      caption:
+        "🔥 Bem-vindo à nossa área exclusiva\n\n" +
         "🔞 Plataforma destinada exclusivamente a maiores de 18 anos.\n\n" +
         "💎 Acesse a área VIP.\n" +
         (config.botMode === "preview"
           ? "⚠️ Modo de visualização: pagamentos e acesso ao canal estão desativados."
           : "⚡ Escolha seu plano. Os planos mensais precisam ser pagos novamente a cada 30 dias.\n" +
             "🔐 Após pagar, envie o comprovante ao suporte. O acesso é liberado manualmente após a confirmação."),
-      homeKeyboard()
-    );
+      reply_markup: homeKeyboard().reply_markup
+    });
   });
 
   bot.action("age:no", async (ctx) => {
@@ -234,6 +235,13 @@ async function showHome(ctx: Context): Promise<void> {
 function welcomePhoto() {
   const image = readFileSync(resolve(process.cwd(), "assets", "welcome.jpg"));
   return Input.fromBuffer(image, "welcome.jpg");
+}
+
+function afterAgePhoto() {
+  const image = readFileSync(
+    resolve(process.cwd(), "assets", "welcome-after-age.jpg")
+  );
+  return Input.fromBuffer(image, "welcome-after-age.jpg");
 }
 
 async function requireAgeVerification(
