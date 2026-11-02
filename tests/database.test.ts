@@ -47,6 +47,33 @@ test("creates and reads an order with a pending Pix charge", () => {
   });
 });
 
+test("lists a user's real Pix order history newest first and excludes other users", () => {
+  withDatabase((db) => {
+    db.createOrder(makeOrder());
+    db.createOrder({
+      ...makeOrder(),
+      externalId: "order-test-002",
+      planId: "lifetime",
+      amountCents: 1999,
+      createdAt: 2_000
+    });
+    db.createOrder({
+      ...makeOrder(),
+      externalId: "other-user-order",
+      telegramUserId: 67890,
+      createdAt: 3_000
+    });
+
+    const history = db.getOrderHistory(12345);
+
+    assert.deepEqual(
+      history.map(({ externalId }) => externalId),
+      ["order-test-002", "order-test-001"]
+    );
+    assert.equal(db.getOrderHistory(12345, 1).length, 1);
+  });
+});
+
 test("only grants access once a matching payment is confirmed", () => {
   withDatabase((db) => {
     db.createOrder(makeOrder());

@@ -141,6 +141,26 @@ export class VipDatabase {
       : undefined;
   }
 
+  getOrderHistory(userId: number, limit = 10): Order[] {
+    const rows = this.db
+      .prepare(
+        `SELECT external_id AS externalId, telegram_user_id AS telegramUserId,
+                plan_id AS planId, amount_cents AS amountCents, status, created_at AS createdAt,
+                pix_code AS pixCode, notification_sent AS notificationSent, paid_at AS paidAt
+         FROM orders
+         WHERE telegram_user_id = ?
+         ORDER BY created_at DESC
+         LIMIT ?`
+      )
+      .all(userId, limit) as Array<Omit<Order, "notificationSent"> & {
+      notificationSent: number;
+    }>;
+    return rows.map((row) => ({
+      ...row,
+      notificationSent: row.notificationSent === 1
+    }));
+  }
+
   markOrderNotificationSent(externalId: string): void {
     this.db
       .prepare("UPDATE orders SET notification_sent = 1 WHERE external_id = ?")

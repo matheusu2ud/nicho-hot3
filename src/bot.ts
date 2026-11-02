@@ -164,8 +164,24 @@ export function createBot(config: Config, db: VipDatabase): Telegraf {
       );
       return;
     }
+    const orders = db.getOrderHistory(ctx.from.id);
+    if (orders.length === 0) {
+      await ctx.reply("Você ainda não tem pedidos Pix no histórico.", homeKeyboard());
+      return;
+    }
+
+    const history = orders.map((order) => {
+      const plan = PLANS[order.planId];
+      const date = new Date(order.createdAt).toLocaleString("pt-BR", {
+        timeZone: "America/Sao_Paulo"
+      });
+      return (
+        `• ${plan?.title ?? "Plano"} — ${formatBRL(order.amountCents)}\n` +
+        `  ${date} · ${orderStatusLabel(order.status)}`
+      );
+    });
     await ctx.reply(
-      "A confirmação do pagamento e a entrega do acesso são feitas manualmente. Para enviar o comprovante ou consultar sua assinatura, fale com o suporte.",
+      `📋 Histórico de pedidos Pix:\n\n${history.join("\n\n")}`,
       homeKeyboard()
     );
   });
@@ -217,6 +233,18 @@ function homeKeyboard() {
     [Markup.button.callback("👤 Minha assinatura", "subscription")],
     [Markup.button.callback("💬 Suporte", "support")]
   ]);
+}
+
+function orderStatusLabel(status: string): string {
+  switch (status) {
+    case "creating": return "Pix sendo gerado";
+    case "pending": return "Aguardando pagamento";
+    case "paid": return "Pagamento confirmado";
+    case "failed": return "Falha ao gerar Pix";
+    case "unknown": return "Status incerto; consulte o suporte";
+    case "refunded": return "Reembolsado";
+    default: return "Status desconhecido";
+  }
 }
 
 async function showHome(ctx: Context): Promise<void> {
