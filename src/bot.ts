@@ -21,7 +21,7 @@ export function createBot(config: Config, db: VipDatabase): Telegraf {
         caption:
           "Esta área é exclusiva para maiores de 18 anos. Ao continuar, você declara ter 18 anos ou mais.",
         reply_markup: Markup.inlineKeyboard([
-          [Markup.button.callback("Tenho 18 anos ou mais", "age:yes")],
+          [Markup.button.callback("Continuar", "age:yes")],
           [Markup.button.callback("Sair", "age:no")]
         ]).reply_markup
       });
@@ -384,7 +384,7 @@ async function requireAgeVerification(
   await ctx.reply(
     "Confirme que tem 18 anos ou mais para continuar.",
     Markup.inlineKeyboard([
-      [Markup.button.callback("Tenho 18 anos ou mais", "age:yes")],
+      [Markup.button.callback("Continuar", "age:yes")],
       [Markup.button.callback("Sair", "age:no")]
     ])
   );
