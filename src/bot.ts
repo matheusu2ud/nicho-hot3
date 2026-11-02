@@ -7,8 +7,7 @@ import type { Config } from "./config.js";
 import { VipDatabase } from "./database.js";
 import {
   ChasePayError,
-  createPixCharge,
-  parseChargeEvent
+  createPixCharge
 } from "./chasepay.js";
 import { formatBRL, isPlanId, PLANS } from "./plans.js";
 
@@ -40,7 +39,7 @@ export function createBot(config: Config, db: VipDatabase): Telegraf {
         (config.botMode === "preview"
           ? "⚠️ Modo de visualização: pagamentos e acesso ao canal estão desativados."
           : "⚡ Escolha seu plano. Os planos mensais precisam ser pagos novamente a cada 30 dias.\n" +
-            "🔐 O acesso é liberado após a confirmação do pagamento."),
+            "🔐 Após pagar, envie o comprovante ao suporte. O acesso é liberado manualmente após a confirmação."),
       homeKeyboard()
     );
   });
@@ -126,24 +125,10 @@ export function createBot(config: Config, db: VipDatabase): Telegraf {
         order
       );
       if (charge.status === "paid") {
-        const completion = db.completePaidOrder(
-          order.externalId,
-          order.amountCents
+        db.setOrderStatus(order.externalId, "unknown");
+        await ctx.reply(
+          "A gateway informou que esta cobrança já está paga. Para confirmar e receber o acesso manualmente, fale com o suporte antes de fazer outro pagamento."
         );
-        if (!completion) {
-          await ctx.reply(
-            "O provedor informou um pagamento, mas não consegui confirmar o pedido. Não pague novamente; fale com o suporte para conferirmos."
-          );
-          return;
-        }
-        try {
-          await notifyIfNeeded(bot, config, db, order.externalId);
-        } catch (error) {
-          console.error("Payment was confirmed but VIP notification failed:", error);
-          await ctx.reply(
-            "Pagamento confirmado e acesso ativado, mas não consegui enviar o convite agora. Abra “Minha assinatura” ou fale com o suporte."
-          );
-        }
         return;
       }
       if (charge.status !== "pending" || !charge.pixCode) {
@@ -179,41 +164,10 @@ export function createBot(config: Config, db: VipDatabase): Telegraf {
       );
       return;
     }
-    const entitlement = db.getEntitlement(ctx.from.id);
-    if (
-      !entitlement ||
-      (!entitlement.permanent &&
-        (entitlement.expiresAt === null || entitlement.expiresAt <= Date.now()))
-    ) {
-      await ctx.reply(
-        "Você não tem uma assinatura VIP ativa.",
-        homeKeyboard()
-      );
-      return;
-    }
-
-    const status = entitlement.permanent
-      ? "Sua assinatura VIP é permanente."
-      : `Seu acesso VIP é válido até ${new Date(entitlement.expiresAt!).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}.`;
-    const membership = await getMembership(
-      bot,
-      requireVipChannelId(config),
-      ctx.from.id
+    await ctx.reply(
+      "A confirmação do pagamento e a entrega do acesso são feitas manualmente. Para enviar o comprovante ou consultar sua assinatura, fale com o suporte.",
+      homeKeyboard()
     );
-    if (membership === "member") {
-      await ctx.reply(status);
-      return;
-    }
-
-    try {
-      const invite = await createInvite(bot, requireVipChannelId(config));
-      await ctx.reply(`${status}\n\nAcesse seu canal privado por este link válido por 10 minutos:\n${invite}`);
-    } catch (error) {
-      console.error("Could not create VIP invite:", error);
-      await ctx.reply(
-        "Sua assinatura está ativa, mas não consegui gerar o convite agora. Tente novamente ou fale com o suporte."
-      );
-    }
   });
 
   bot.action("support", async (ctx) => {
@@ -229,95 +183,6 @@ export function createBot(config: Config, db: VipDatabase): Telegraf {
   return bot;
 }
 
-export async function processWebhookBody(
-  bot: Telegraf,
-  config: Config,
-  db: VipDatabase,
-  bodyHash: string,
-  rawBody: string
-): Promise<void> {
-  const event = parseChargeEvent(rawBody);
-
-  if (event.event !== "charge.paid") {
-    db.markWebhookProcessed(bodyHash);
-    return;
-  }
-  if (!event.externalId || event.amountCents === undefined) {
-    throw new Error("Paid event is missing external_id or amount_cents");
-  }
-
-  const completion = db.completePaidOrder(event.externalId, event.amountCents);
-  if (!completion) {
-    console.error(
-      `Paid webhook did not match a pending order: ${event.externalId}`
-    );
-    db.markWebhookProcessed(bodyHash);
-    return;
-  }
-
-  await notifyIfNeeded(bot, config, db, event.externalId);
-  db.markWebhookProcessed(bodyHash);
-}
-
-export async function expireMemberships(
-  bot: Telegraf,
-  config: Config,
-  db: VipDatabase
-): Promise<void> {
-  if (config.botMode === "preview") return;
-  const vipChannelId = requireVipChannelId(config);
-  for (const userId of db.getExpiredEntitlements()) {
-    try {
-      const membership = await getMembership(bot, vipChannelId, userId);
-      if (membership === "member") {
-        await bot.telegram.banChatMember(vipChannelId, userId);
-        await bot.telegram.unbanChatMember(vipChannelId, userId);
-      }
-      db.removeEntitlement(userId);
-      await bot.telegram.sendMessage(
-        userId,
-        "Seu acesso VIP terminou. Para continuar, escolha um plano e faça um novo pagamento.",
-        homeKeyboard()
-      );
-    } catch (error) {
-      console.error(`Could not expire VIP access for user ${userId}:`, error);
-    }
-  }
-}
-
-async function notifyAndInvite(
-  bot: Telegraf,
-  config: Config,
-  db: VipDatabase,
-  userId: number
-): Promise<void> {
-  const entitlement = db.getEntitlement(userId);
-  if (!entitlement) {
-    throw new Error("Paid order did not create an entitlement");
-  }
-  const invite = await createInvite(bot, requireVipChannelId(config));
-  const status = entitlement.permanent
-    ? "Seu acesso VIP permanente foi liberado."
-    : `Seu acesso VIP foi liberado por 30 dias, até ${new Date(entitlement.expiresAt!).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}.`;
-  await bot.telegram.sendMessage(
-    userId,
-    `${status}\n\nEntre no canal privado usando este link, válido por 10 minutos:\n${invite}`,
-    homeKeyboard()
-  );
-}
-
-async function notifyIfNeeded(
-  bot: Telegraf,
-  config: Config,
-  db: VipDatabase,
-  externalId: string
-): Promise<void> {
-  const order = db.getOrder(externalId);
-  if (!order || order.status !== "paid" || order.notificationSent) return;
-  await notifyAndInvite(bot, config, db, order.telegramUserId);
-  db.markOrderNotificationSent(externalId);
-}
-
 async function sendPixInstructions(
   ctx: Context,
   pixCode: string,
@@ -327,7 +192,7 @@ async function sendPixInstructions(
   await ctx.replyWithPhoto(Input.fromBuffer(qr, "pix.png"), {
     caption:
       `PIX de ${formatBRL(amountCents)}.\n` +
-      "Escaneie o QR Code ou copie o código abaixo. O acesso será enviado após a confirmação do pagamento."
+      "Escaneie o QR Code ou copie o código abaixo. Após pagar, envie o comprovante ao suporte; o acesso será liberado manualmente após a confirmação."
   });
   await ctx.reply(`<code>${escapeHtml(pixCode)}</code>`, {
     parse_mode: "HTML"
@@ -361,7 +226,7 @@ async function showHome(ctx: Context): Promise<void> {
       "🔞 Plataforma destinada exclusivamente a maiores de 18 anos.\n\n" +
       "💎 Acesse nossa área VIP.\n" +
       "⚡ Escolha seu plano.\n" +
-      "🔐 O acesso VIP é liberado após a confirmação do pagamento.",
+      "🔐 Após pagar, envie o comprovante ao suporte. O acesso é liberado manualmente após a confirmação.",
     reply_markup: homeKeyboard().reply_markup
   });
 }
@@ -389,32 +254,4 @@ async function requireAgeVerification(
     ])
   );
   return false;
-}
-
-async function getMembership(
-  bot: Telegraf,
-  channelId: string,
-  userId: number
-): Promise<"member" | "not_member"> {
-  const member = await bot.telegram.getChatMember(channelId, userId);
-  return ["member", "administrator", "creator", "restricted"].includes(
-    member.status
-  )
-    ? "member"
-    : "not_member";
-}
-
-async function createInvite(bot: Telegraf, channelId: string): Promise<string> {
-  const result = await bot.telegram.createChatInviteLink(channelId, {
-    member_limit: 1,
-    expire_date: Math.floor(Date.now() / 1000) + 10 * 60
-  });
-  return result.invite_link;
-}
-
-function requireVipChannelId(config: Config): string {
-  if (!config.vipChannelId) {
-    throw new Error("VIP_CHANNEL_ID is required in live mode");
-  }
-  return config.vipChannelId;
 }

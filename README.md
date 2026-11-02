@@ -1,6 +1,6 @@
 # Bot de acesso VIP no Telegram
 
-Bot de assinatura com planos Pix, confirmação de pagamento por webhook e liberação de convite individual para um canal privado. O acesso exige autodeclaração de 18 anos ou mais; isso não substitui verificação legal de idade quando exigida.
+Bot de assinatura com geração de cobranças Pix. A confirmação do pagamento e a entrega do acesso VIP são feitas manualmente pelo suporte. O acesso exige autodeclaração de 18 anos ou mais; isso não substitui verificação legal de idade quando exigida.
 
 ## Visualizar sem cobrar (recomendado)
 
@@ -27,16 +27,14 @@ Bot de assinatura com planos Pix, confirmação de pagamento por webhook e liber
 
 O bot recebe atualizações do Telegram por webhook e inicia um servidor HTTP na porta `PORT` (ou `3000` localmente). O endpoint `/healthz` pode ser usado como health check. No modo preview, pagamentos continuam desativados.
 
-## Ativar pagamentos reais
+## Gerar Pix real e entregar acesso manualmente
 
-Só altere para `BOT_MODE=live` depois de configurar:
+Para gerar cobranças reais, configure:
 
 - `CHASEPAY_API_KEY`: token privado puro da API; o bot adiciona `Bearer` automaticamente.
-- `CHASEPAY_WEBHOOK_SECRET`: segredo de assinatura do webhook.
-- `VIP_CHANNEL_ID`: ID do canal privado; adicione o bot como administrador com permissão para convidar e remover membros.
 - `PUBLIC_BASE_URL`: domínio HTTPS público do servidor.
 
-Configure no painel do gateway o webhook `POST https://SEU_DOMINIO/webhooks/chasepay`. A implementação espera a assinatura HMAC-SHA256 no cabeçalho `x-chase-signature`.
+Defina `BOT_MODE=live`. Ao escolher um plano, o bot cria a cobrança e envia o QR Code Pix e o código copia e cola. Confira o pagamento no painel ChasePay e entregue o acesso manualmente; o bot não confirma pagamentos nem libera acesso automaticamente. Cobranças live podem movimentar dinheiro de verdade.
 
 Para hospedar na Render, crie um **Web Service** com Build Command `npm ci && npm run build` e Start Command `npm start`. Defina `PUBLIC_BASE_URL` como a URL HTTPS pública do serviço, inclusive no modo preview.
 
@@ -52,6 +50,6 @@ Os testes usam banco temporário e respostas simuladas. Não criam cobranças, n
 
 - Mantenha `.env` fora do Git e nunca envie tokens ou segredos em mensagens.
 - A integração de cobrança usa o token privado Bearer no servidor. A chave pública fornecida não é necessária neste fluxo da API.
-- A documentação da ChasePay informa que não há sandbox separado; cobranças enviadas à API podem ser reais. Não teste com uma chave live sem intenção de cobrar.
-- O bot só libera acesso após confirmação recebida e validada pelo webhook; um código Pix exibido não significa que o pagamento foi confirmado.
+- A documentação da ChasePay informa que não há sandbox separado; cobranças enviadas à API podem ser reais.
+- Um código Pix exibido não significa que o pagamento foi confirmado. Confira sempre o pagamento no painel da gateway antes de entregar acesso.
 - Guarde `DATABASE_PATH` em armazenamento persistente. Se o arquivo SQLite for perdido, pedidos e acessos locais também serão perdidos.

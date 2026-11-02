@@ -7,8 +7,6 @@ const environmentKeys = [
   "BOT_TOKEN",
   "CHASEPAY_API_KEY",
   "CHASEPAY_AUTHORIZATION",
-  "CHASEPAY_WEBHOOK_SECRET",
-  "VIP_CHANNEL_ID",
   "PUBLIC_BASE_URL",
   "DATABASE_PATH",
   "PREVIEW_DATABASE_PATH"
@@ -39,8 +37,6 @@ test("preview mode needs a Telegram token and public URL and uses a separate dat
 
     assert.equal(config.botMode, "preview");
     assert.equal(config.chasepayApiKey, null);
-    assert.equal(config.chasepayWebhookSecret, null);
-    assert.equal(config.vipChannelId, null);
     assert.equal(config.publicBaseUrl, "https://example.com");
     assert.equal(config.databasePath, "./data/vip-bot-preview.sqlite");
   });
@@ -51,9 +47,21 @@ test("live mode refuses to start without the private ChasePay API key", () => {
     process.env.BOT_MODE = "live";
     process.env.BOT_TOKEN = "test-telegram-token";
     process.env.PUBLIC_BASE_URL = "https://example.com";
-    process.env.CHASEPAY_WEBHOOK_SECRET = "test-webhook-secret";
-    process.env.VIP_CHANNEL_ID = "-1001234567890";
 
     assert.throws(loadConfig, /CHASEPAY_API_KEY/);
+  });
+});
+
+test("live mode allows manual access delivery without gateway webhook or channel settings", () => {
+  withCleanEnvironment(() => {
+    process.env.BOT_MODE = "live";
+    process.env.BOT_TOKEN = "test-telegram-token";
+    process.env.PUBLIC_BASE_URL = "https://example.com";
+    process.env.CHASEPAY_API_KEY = "test-private-api-key";
+
+    const config = loadConfig();
+
+    assert.equal(config.botMode, "live");
+    assert.equal(config.chasepayApiKey, "test-private-api-key");
   });
 });
