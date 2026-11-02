@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 {
   "compilerOptions": {
     "target": "ES2022",
@@ -13,19 +12,3 @@
   },
   "include": ["src/**/*.ts", "tests/**/*.ts"]
 }
-=======
-{
-  "compilerOptions": {
-    "target": "ES2022",
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext",
-    "rootDir": ".",
-    "outDir": "dist",
-    "strict": true,
-    "esModuleInterop": true,
-    "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true
-  },
-  "include": ["src/**/*.ts", "tests/**/*.ts"]
-}
->>>>>>> 16bf7ce3f5a1cbca4fc92bfde623d93693f32bef
