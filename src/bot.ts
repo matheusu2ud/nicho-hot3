@@ -39,8 +39,7 @@ export function createBot(config: Config, db: VipDatabase): Telegraf {
         "💎 Acesse a área VIP.\n" +
         (config.botMode === "preview"
           ? "⚠️ Modo de visualização: pagamentos e acesso ao canal estão desativados."
-          : "⚡ Escolha seu plano. Os planos mensais precisam ser pagos novamente a cada 30 dias.\n" +
-            "🔐 Após pagar, envie o comprovante ao suporte. O acesso é liberado manualmente após a confirmação."),
+          : "⚡ Escolha seu plano. Os planos mensais precisam ser pagos novamente a cada 30 dias."),
       reply_markup: homeKeyboard().reply_markup
     });
   });
@@ -223,11 +222,10 @@ function homeKeyboard() {
 async function showHome(ctx: Context): Promise<void> {
   await ctx.replyWithPhoto(welcomePhoto(), {
     caption:
-    "🔥 Bem-vindo à nossa área exclusiva 🔥\n\n" +
+      "🔥 Bem-vindo à nossa área exclusiva 🔥\n\n" +
       "🔞 Plataforma destinada exclusivamente a maiores de 18 anos.\n\n" +
       "💎 Acesse nossa área VIP.\n" +
-      "⚡ Escolha seu plano.\n" +
-      "🔐 Após pagar, envie o comprovante ao suporte. O acesso é liberado manualmente após a confirmação.",
+      "⚡ Escolha seu plano.",
     reply_markup: homeKeyboard().reply_markup
   });
 }
