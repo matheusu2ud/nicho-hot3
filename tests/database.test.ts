@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { VipDatabase } from "../src/database.js";
+import { PLANS } from "../src/plans.js";
 
 function withDatabase(run: (db: VipDatabase) => void): void {
   const directory = mkdtempSync(path.join(tmpdir(), "vip-bot-test-"));
@@ -21,7 +22,7 @@ function makeOrder() {
     externalId: "order-test-001",
     telegramUserId: 12345,
     planId: "monthly_10" as const,
-    amountCents: 1000,
+    amountCents: 890,
     status: "creating" as const,
     createdAt: 1_000,
     pixCode: null,
@@ -29,6 +30,13 @@ function makeOrder() {
     paidAt: null
   };
 }
+
+test("uses the requested Pix prices for every plan", () => {
+  assert.deepEqual(
+    Object.values(PLANS).map((plan) => plan.amountCents),
+    [890, 1490, 2490]
+  );
+});
 
 test("creates and reads an order with a pending Pix charge", () => {
   withDatabase((db) => {
@@ -47,6 +55,30 @@ test("creates and reads an order with a pending Pix charge", () => {
   });
 });
 
+test("confirms payment without granting access automatically", () => {
+  withDatabase((db) => {
+    db.createOrder(makeOrder());
+
+    assert.equal(
+      db.confirmPaymentWithoutGrantingAccess("order-test-001", 889),
+      undefined
+    );
+    const confirmed = db.confirmPaymentWithoutGrantingAccess(
+      "order-test-001",
+      890,
+      10_000
+    );
+
+    assert.equal(confirmed?.status, "paid");
+    assert.equal(confirmed?.paidAt, 10_000);
+    assert.equal(db.getEntitlement(12345), undefined);
+    assert.equal(
+      db.confirmPaymentWithoutGrantingAccess("order-test-001", 890)?.paidAt,
+      10_000
+    );
+  });
+});
+
 test("lists a user's real Pix order history newest first and excludes other users", () => {
   withDatabase((db) => {
     db.createOrder(makeOrder());
@@ -54,7 +86,7 @@ test("lists a user's real Pix order history newest first and excludes other user
       ...makeOrder(),
       externalId: "order-test-002",
       planId: "lifetime",
-      amountCents: 1999,
+      amountCents: 2490,
       createdAt: 2_000
     });
     db.createOrder({
@@ -71,29 +103,5 @@ test("lists a user's real Pix order history newest first and excludes other user
       ["order-test-002", "order-test-001"]
     );
     assert.equal(db.getOrderHistory(12345, 1).length, 1);
-  });
-});
-
-test("only grants access once a matching payment is confirmed", () => {
-  withDatabase((db) => {
-    db.createOrder(makeOrder());
-
-    assert.equal(db.completePaidOrder("order-test-001", 999), undefined);
-    const completion = db.completePaidOrder("order-test-001", 1000, 10_000);
-    assert.equal(completion?.newlyPaid, true);
-    assert.deepEqual(db.getEntitlement(12345), {
-      telegramUserId: 12345,
-      expiresAt: 10_000 + 30 * 24 * 60 * 60 * 1000,
-      permanent: false
-    });
-
-    assert.equal(
-      db.completePaidOrder("order-test-001", 1000, 20_000)?.newlyPaid,
-      false
-    );
-    assert.equal(
-      db.getEntitlement(12345)?.expiresAt,
-      10_000 + 30 * 24 * 60 * 60 * 1000
-    );
   });
 });

@@ -7,6 +7,7 @@ const environmentKeys = [
   "BOT_TOKEN",
   "CHASEPAY_API_KEY",
   "CHASEPAY_AUTHORIZATION",
+  "CHASEPAY_WEBHOOK_SECRET",
   "PUBLIC_BASE_URL",
   "DATABASE_PATH",
   "PREVIEW_DATABASE_PATH"
@@ -52,16 +53,20 @@ test("live mode refuses to start without the private ChasePay API key", () => {
   });
 });
 
-test("live mode allows manual access delivery without gateway webhook or channel settings", () => {
+test("live mode requires a ChasePay webhook secret but not a VIP channel ID", () => {
   withCleanEnvironment(() => {
     process.env.BOT_MODE = "live";
     process.env.BOT_TOKEN = "test-telegram-token";
     process.env.PUBLIC_BASE_URL = "https://example.com";
     process.env.CHASEPAY_API_KEY = "test-private-api-key";
+    assert.throws(loadConfig, /CHASEPAY_WEBHOOK_SECRET/);
+
+    process.env.CHASEPAY_WEBHOOK_SECRET = "test-webhook-secret";
 
     const config = loadConfig();
 
     assert.equal(config.botMode, "live");
     assert.equal(config.chasepayApiKey, "test-private-api-key");
+    assert.equal(config.chasepayWebhookSecret, "test-webhook-secret");
   });
 });

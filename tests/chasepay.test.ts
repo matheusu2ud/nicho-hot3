@@ -12,7 +12,7 @@ const order: Order = {
   externalId: "order-test-001",
   telegramUserId: 12345,
   planId: "monthly_10",
-  amountCents: 1000,
+  amountCents: 890,
   status: "creating",
   createdAt: 1_000,
   pixCode: null,
@@ -47,7 +47,7 @@ test("sends a Pix charge request and trims the returned copy-and-paste code", as
     "Bearer test-token"
   );
   assert.deepEqual(JSON.parse(String(requestInit?.body)), {
-    amount_cents: 1000,
+    amount_cents: 890,
     method: "pix",
     external_id: "order-test-001",
     description: "monthly_10"
@@ -98,9 +98,9 @@ test("parses paid events and rejects events without required payment data", () =
   assert.deepEqual(
     parseChargeEvent(JSON.stringify({
       event: "charge.paid",
-      data: { external_id: "order-test-001", amount_cents: 1000 }
+      data: { external_id: "order-test-001", amount_cents: 890 }
     })),
-    { event: "charge.paid", externalId: "order-test-001", amountCents: 1000 }
+    { event: "charge.paid", externalId: "order-test-001", amountCents: 890 }
   );
   assert.throws(
     () => parseChargeEvent(JSON.stringify({ event: "charge.paid", data: {} })),

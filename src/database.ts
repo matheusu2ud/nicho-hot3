@@ -167,29 +167,24 @@ export class VipDatabase {
       .run(externalId);
   }
 
-  completePaidOrder(
+  confirmPaymentWithoutGrantingAccess(
     externalId: string,
     amountCents: number,
     now = Date.now()
-  ): { order: Order; newlyPaid: boolean } | undefined {
-    const transaction = this.db.transaction(() => {
-      const order = this.getOrder(externalId);
-      if (!order || order.amountCents !== amountCents) {
-        return undefined;
-      }
-      if (order.status === "paid") {
-        return { order, newlyPaid: false };
-      }
-      if (order.status !== "pending" && order.status !== "creating") {
-        return undefined;
-      }
-      this.db
-        .prepare("UPDATE orders SET status = 'paid', paid_at = ? WHERE external_id = ?")
-        .run(now, externalId);
-      this.grantEntitlementInTransaction(order.telegramUserId, order.planId, now);
-      return { order: { ...order, status: "paid" as const }, newlyPaid: true };
-    });
-    return transaction();
+  ): Order | undefined {
+    const order = this.getOrder(externalId);
+    if (!order || order.amountCents !== amountCents) return undefined;
+    if (order.status === "paid") return order;
+    if (!["creating", "pending", "unknown"].includes(order.status)) {
+      return undefined;
+    }
+
+    this.db
+      .prepare(
+        "UPDATE orders SET status = 'paid', paid_at = ? WHERE external_id = ?"
+      )
+      .run(now, externalId);
+    return { ...order, status: "paid", paidAt: now };
   }
 
   revokeOrder(externalId: string): void {

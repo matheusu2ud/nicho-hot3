@@ -22,6 +22,7 @@ export interface Config {
   botMode: "preview" | "live";
   botToken: string;
   chasepayApiKey: string | null;
+  chasepayWebhookSecret: string | null;
   supportUsername: string;
   publicBaseUrl: string | null;
   port: number;
@@ -50,6 +51,7 @@ export function loadConfig(): Config {
     botMode,
     botToken: required("BOT_TOKEN"),
     chasepayApiKey: liveMode ? requiredChasePayApiKey() : null,
+    chasepayWebhookSecret: liveMode ? required("CHASEPAY_WEBHOOK_SECRET") : null,
     supportUsername: (process.env.SUPPORT_USERNAME ?? "ceoc2b").replace(/^@/, ""),
     publicBaseUrl,
     port,
