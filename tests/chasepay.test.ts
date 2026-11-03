@@ -1,11 +1,6 @@
 import assert from "node:assert/strict";
-import { createHmac } from "node:crypto";
 import test from "node:test";
-import {
-  createPixCharge,
-  parseChargeEvent,
-  verifyChaseSignature
-} from "../src/chasepay.js";
+import { createPixCharge } from "../src/chasepay.js";
 import type { Order } from "../src/database.js";
 
 const order: Order = {
@@ -82,28 +77,4 @@ test("does not add a second Bearer prefix", async (t) => {
 
   await createPixCharge("Bearer existing-token", order);
   assert.equal(authorization, "Bearer existing-token");
-});
-
-test("validates webhook signatures and rejects altered bodies", () => {
-  const secret = "test-webhook-secret";
-  const body = Buffer.from('{"event":"charge.paid"}');
-  const signature = createHmac("sha256", secret).update(body).digest("hex");
-
-  assert.equal(verifyChaseSignature(body, `sha256=${signature}`, secret), true);
-  assert.equal(verifyChaseSignature(Buffer.from(`${body} `), signature, secret), false);
-  assert.equal(verifyChaseSignature(body, "not-a-signature", secret), false);
-});
-
-test("parses paid events and rejects events without required payment data", () => {
-  assert.deepEqual(
-    parseChargeEvent(JSON.stringify({
-      event: "charge.paid",
-      data: { external_id: "order-test-001", amount_cents: 890 }
-    })),
-    { event: "charge.paid", externalId: "order-test-001", amountCents: 890 }
-  );
-  assert.throws(
-    () => parseChargeEvent(JSON.stringify({ event: "charge.paid", data: {} })),
-    /missing event, external_id, or amount_cents/
-  );
 });

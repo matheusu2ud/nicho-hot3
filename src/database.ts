@@ -52,12 +52,6 @@ export class VipDatabase {
         permanent INTEGER NOT NULL DEFAULT 0,
         updated_at INTEGER NOT NULL
       );
-      CREATE TABLE IF NOT EXISTS webhook_jobs (
-        body_hash TEXT PRIMARY KEY,
-        body TEXT NOT NULL,
-        status TEXT NOT NULL DEFAULT 'pending',
-        created_at INTEGER NOT NULL
-      );
     `);
   }
 
@@ -197,28 +191,6 @@ export class VipDatabase {
       this.rebuildEntitlementInTransaction(order.telegramUserId);
     });
     transaction();
-  }
-
-  recordWebhook(bodyHash: string, body: string, now = Date.now()): void {
-    this.db
-      .prepare(
-        "INSERT INTO webhook_jobs (body_hash, body, created_at) VALUES (?, ?, ?) ON CONFLICT(body_hash) DO NOTHING"
-      )
-      .run(bodyHash, body, now);
-  }
-
-  getPendingWebhooks(limit = 20): Array<{ bodyHash: string; body: string }> {
-    return this.db
-      .prepare(
-        "SELECT body_hash AS bodyHash, body FROM webhook_jobs WHERE status = 'pending' ORDER BY created_at LIMIT ?"
-      )
-      .all(limit) as Array<{ bodyHash: string; body: string }>;
-  }
-
-  markWebhookProcessed(bodyHash: string): void {
-    this.db
-      .prepare("UPDATE webhook_jobs SET status = 'processed' WHERE body_hash = ?")
-      .run(bodyHash);
   }
 
   getEntitlement(userId: number): Entitlement | undefined {

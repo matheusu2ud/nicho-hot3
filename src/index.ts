@@ -7,7 +7,7 @@ async function main(): Promise<void> {
   const config = loadConfig();
   const db = new VipDatabase(config.databasePath);
   const bot = createBot(config, db);
-  const server = await createWebhookServer(config, db, bot);
+  const server = await createWebhookServer(config, bot);
   console.log(
     config.botMode === "preview"
       ? "Telegram bot started in PREVIEW mode with webhooks; payments are disabled."

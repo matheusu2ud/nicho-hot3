@@ -4,16 +4,12 @@ import { resolve } from "node:path";
 import { Telegraf, Markup, Input, type Context } from "telegraf";
 import QRCode from "qrcode";
 import type { Config } from "./config.js";
-import { VipDatabase, type Order } from "./database.js";
+import { VipDatabase } from "./database.js";
 import {
   ChasePayError,
-  createPixCharge,
-  parseChargeEvent
+  createPixCharge
 } from "./chasepay.js";
 import { formatBRL, isPlanId, PLANS } from "./plans.js";
-
-const PAYMENT_CONFIRMED_MESSAGE =
-  "✅ Pagamento confirmado. Sua compra foi registrada. A liberação do acesso é feita manualmente.";
 
 export function createBot(config: Config, db: VipDatabase): Telegraf {
   const bot = new Telegraf(config.botToken);
@@ -141,13 +137,11 @@ export function createBot(config: Config, db: VipDatabase): Telegraf {
           return;
         }
         try {
-          await notifyPaymentConfirmed(
-            db,
-            confirmed,
-            async (userId, message) => {
-              await bot.telegram.sendMessage(userId, message);
-            }
+          await bot.telegram.sendMessage(
+            confirmed.telegramUserId,
+            "✅ Pagamento confirmado. Sua compra foi registrada. A liberação do acesso é feita manualmente."
           );
+          db.markOrderNotificationSent(confirmed.externalId);
         } catch (error) {
           console.error("Payment was confirmed but Telegram notification failed:", error);
           await ctx.reply(
@@ -222,47 +216,6 @@ export function createBot(config: Config, db: VipDatabase): Telegraf {
   });
 
   return bot;
-}
-
-export async function processChasePayWebhook(
-  db: VipDatabase,
-  bodyHash: string,
-  rawBody: string,
-  sendMessage: (userId: number, message: string) => Promise<void>
-): Promise<void> {
-  const event = parseChargeEvent(rawBody);
-  if (event.event !== "charge.paid") {
-    db.markWebhookProcessed(bodyHash);
-    return;
-  }
-  if (!event.externalId || event.amountCents === undefined) {
-    throw new Error("Paid event is missing external_id or amount_cents");
-  }
-
-  const order = db.confirmPaymentWithoutGrantingAccess(
-    event.externalId,
-    event.amountCents
-  );
-  if (!order) {
-    console.error(`Paid webhook did not match a pending order: ${event.externalId}`);
-    db.markWebhookProcessed(bodyHash);
-    return;
-  }
-  await notifyPaymentConfirmed(db, order, sendMessage);
-  db.markWebhookProcessed(bodyHash);
-}
-
-async function notifyPaymentConfirmed(
-  db: VipDatabase,
-  order: Order,
-  sendMessage: (userId: number, message: string) => Promise<void>
-): Promise<void> {
-  if (order.notificationSent) return;
-  await sendMessage(
-    order.telegramUserId,
-    PAYMENT_CONFIRMED_MESSAGE
-  );
-  db.markOrderNotificationSent(order.externalId);
 }
 
 async function sendPixInstructions(
