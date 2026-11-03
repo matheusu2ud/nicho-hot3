@@ -1,7 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import Database from "better-sqlite3";
-import type { PlanId } from "./plans.js";
+import { PLANS, type PlanId } from "./plans.js";
 
 export interface Order {
   externalId: string;
@@ -228,7 +228,7 @@ export class VipDatabase {
       return current;
     }
 
-    const durationDays = planId === "lifetime" ? null : 30;
+    const durationDays = PLANS[planId].durationDays;
     const expiresAt =
       durationDays === null
         ? null
@@ -273,8 +273,10 @@ export class VipDatabase {
 
     let expiresAt: number | null = null;
     for (const order of paidOrders) {
+      const durationDays = PLANS[order.planId].durationDays;
+      if (durationDays === null) continue;
       const start = Math.max(expiresAt ?? order.paidAt, order.paidAt);
-      expiresAt = start + 30 * 24 * 60 * 60 * 1000;
+      expiresAt = start + durationDays * 24 * 60 * 60 * 1000;
     }
 
     if (expiresAt === null || expiresAt <= Date.now()) {

@@ -36,6 +36,20 @@ test("uses the requested Pix prices for every plan", () => {
     Object.values(PLANS).map((plan) => plan.amountCents),
     [890, 1490, 2490]
   );
+  assert.deepEqual(
+    Object.values(PLANS).map((plan) => plan.durationDays),
+    [15, 30, null]
+  );
+});
+
+test("grants and renews the R$ 8,90 plan in 15-day periods", () => {
+  withDatabase((db) => {
+    const first = db.grantEntitlement(12345, "monthly_10", 10_000);
+    assert.equal(first.expiresAt, 10_000 + 15 * 24 * 60 * 60 * 1000);
+
+    const renewed = db.grantEntitlement(12345, "monthly_10", 20_000);
+    assert.equal(renewed.expiresAt, 10_000 + 30 * 24 * 60 * 60 * 1000);
+  });
 });
 
 test("creates and reads an order with a pending Pix charge", () => {

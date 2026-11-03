@@ -39,7 +39,7 @@ export function createBot(config: Config, db: VipDatabase): Telegraf {
         "💎 Acesse a área VIP.\n" +
         (config.botMode === "preview"
           ? "⚠️ Modo de visualização: pagamentos e acesso ao canal estão desativados."
-          : "⚡ Escolha seu plano. Os planos mensais precisam ser pagos novamente a cada 30 dias."),
+          : "⚡ Escolha seu plano e aproveite o acesso pelo período contratado."),
       reply_markup: homeKeyboard().reply_markup
     });
   });
@@ -60,12 +60,12 @@ export function createBot(config: Config, db: VipDatabase): Telegraf {
     if (!(await requireAgeVerification(ctx, db))) return;
     await ctx.reply(
       "💎 Escolha seu plano:\n\n" +
-        "• R$ 8,90 — acesso por 30 dias\n" +
+        "• R$ 8,90 — acesso por 15 dias\n" +
         "• R$ 14,90 — acesso por 30 dias\n" +
         "• R$ 24,90 — acesso permanente\n\n" +
-        "Os planos de 30 dias não renovam cobrança automaticamente: pague novamente para estender o acesso.",
+        "Os planos não renovam cobrança automaticamente: pague novamente para estender o acesso.",
       Markup.inlineKeyboard([
-        [Markup.button.callback("VIP 30 dias — R$ 8,90", "buy:monthly_10")],
+        [Markup.button.callback("VIP 15 dias — R$ 8,90", "buy:monthly_10")],
         [Markup.button.callback("VIP 30 dias — R$ 14,90", "buy:monthly_1499")],
         [Markup.button.callback("VIP permanente — R$ 24,90", "buy:lifetime")],
         [Markup.button.callback("Voltar", "home")]

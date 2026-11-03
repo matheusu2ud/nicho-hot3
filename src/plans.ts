@@ -10,9 +10,9 @@ export interface Plan {
 export const PLANS: Record<PlanId, Plan> = {
   monthly_10: {
     id: "monthly_10",
-    title: "VIP mensal - R$ 8,90",
+    title: "VIP 15 dias - R$ 8,90",
     amountCents: 890,
-    durationDays: 30
+    durationDays: 15
   },
   monthly_1499: {
     id: "monthly_1499",
