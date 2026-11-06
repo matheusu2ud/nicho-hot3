@@ -22,7 +22,7 @@ function makeOrder() {
     externalId: "order-test-001",
     telegramUserId: 12345,
     planId: "monthly_10" as const,
-    amountCents: 890,
+    amountCents: 1190,
     status: "creating" as const,
     createdAt: 1_000,
     pixCode: null,
@@ -34,7 +34,7 @@ function makeOrder() {
 test("uses the requested Pix prices for every plan", () => {
   assert.deepEqual(
     Object.values(PLANS).map((plan) => plan.amountCents),
-    [890, 1490, 2490]
+    [1190, 1490, 2490]
   );
   assert.deepEqual(
     Object.values(PLANS).map((plan) => plan.durationDays),
@@ -42,7 +42,7 @@ test("uses the requested Pix prices for every plan", () => {
   );
 });
 
-test("grants and renews the R$ 8,90 plan in 15-day periods", () => {
+test("grants and renews the R$ 11,90 plan in 15-day periods", () => {
   withDatabase((db) => {
     const first = db.grantEntitlement(12345, "monthly_10", 10_000);
     assert.equal(first.expiresAt, 10_000 + 15 * 24 * 60 * 60 * 1000);
@@ -79,7 +79,7 @@ test("confirms payment without granting access automatically", () => {
     );
     const confirmed = db.confirmPaymentWithoutGrantingAccess(
       "order-test-001",
-      890,
+      1190,
       10_000
     );
 
@@ -87,7 +87,7 @@ test("confirms payment without granting access automatically", () => {
     assert.equal(confirmed?.paidAt, 10_000);
     assert.equal(db.getEntitlement(12345), undefined);
     assert.equal(
-      db.confirmPaymentWithoutGrantingAccess("order-test-001", 890)?.paidAt,
+      db.confirmPaymentWithoutGrantingAccess("order-test-001", 1190)?.paidAt,
       10_000
     );
   });
