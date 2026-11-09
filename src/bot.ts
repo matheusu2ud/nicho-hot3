@@ -18,7 +18,11 @@ export function createBot(config: Config, db: VipDatabase): Telegraf {
     if (!db.isAgeVerified(ctx.from.id)) {
       await ctx.replyWithPhoto(welcomePhoto(), {
         caption:
-          "👀 Uma experiência VIP exclusiva está esperando por você...\nToque em Continuar e descubra.",
+          "😈 Seja bem-vindo à Pecatto!\n\n" +
+          "👉 Conheça nosso grupo VIP com conteúdo exclusivo de criadores adultos.\n\n" +
+          "🙋‍♂️ Confira as condições de reembolso antes de assinar.\n\n" +
+          "🔞 Acesso somente para maiores de 18 anos. Conteúdo publicado com autorização dos criadores.\n\n" +
+          "Toque em Continuar para conhecer os planos.",
         reply_markup: Markup.inlineKeyboard([
           [Markup.button.callback("Continuar", "age:yes")],
           [Markup.button.callback("Sair", "age:no")]
