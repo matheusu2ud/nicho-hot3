@@ -19,9 +19,9 @@ export function createBot(config: Config, db: VipDatabase): Telegraf {
       await ctx.replyWithPhoto(welcomePhoto(), {
         caption:
           "😈 Seja bem-vindo à Pecatto!\n\n" +
-          "👉 Conheça nosso grupo VIP com conteúdo exclusivo de criadores adultos.\n\n" +
-          "🙋‍♂️ Confira as condições de reembolso antes de assinar.\n\n" +
-          "🔞 Acesso somente para maiores de 18 anos. Conteúdo publicado com autorização dos criadores.\n\n" +
+          "👉  Somos o único grupo do telegram com mais de 5 mil vazados de famosinhas da interne.\n\n" +
+          "🙋‍♂️Não gostou do grupo? reembolsamos seu dinheiro na hora! .\n\n" +
+          "🔞 Vazados da mel maia, julia petroni, larrissa manoela, alencar e muito mais! garanta seu plano na pecatto e tenha acesso a +de 10 mil arquivos exclusivos .\n\n" +
           "Toque em Continuar para conhecer os planos.",
         reply_markup: Markup.inlineKeyboard([
           [Markup.button.callback("Continuar", "age:yes")],
